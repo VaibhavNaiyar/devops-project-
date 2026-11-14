@@ -7,7 +7,7 @@ const CATEGORIES = ['Hostel', 'Lab', 'IT', 'Library', 'Other'];
 const STATUSES = ['Open', 'In progress', 'Resolved'];
 
 // Release colour: change it together with the version in package.json to see a release go live in the browser
-const RELEASE_COLOR = '#2563eb';
+const RELEASE_COLOR = '#059669';
 
 function buildApp({
   store = createStore(),

@@ -7,7 +7,7 @@
 
 - name: Run {{ tag }} (non-root, read-only filesystem, no Linux capabilities, memory-limited)
   ansible.builtin.command: >
-    docker run -d --name {{ project }} --restart unless-stopped
+    docker run -d --name {{ project }} --hostname {{ inventory_hostname }} --restart unless-stopped
     -p {{ app_port }}:8080 --env-file /etc/campusdesk.env
     -e APP_VERSION={{ tag }} -e FAIL_HEALTH={{ inject_fault }}
     --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --memory 384m
