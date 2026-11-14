@@ -128,6 +128,7 @@ cd terraform && terraform destroy
 | #1 | `1.0.0-b1-aa4c7ae` | ✅ All stages green: first release deployed to both servers |
 | #2 | `1.1.0-b2-e6fe30c` (new green theme) | ✅ Rolling deploy with **0 failed requests** while users were served |
 | #3 | `1.1.0-b3-9d59122` with `SIMULATE_BAD_RELEASE` | ❌ by design: health check failed on app-1, **automatic rollback**, **173 requests, 0 failed** |
+| #4 | `1.1.0-b4-16dfb4d` | ✅ **Started automatically by the GitHub webhook** ("Started by GitHub push by VaibhavNaiyar"), all stages green |
 
 **Automatic rollback (build #3)**, from the Jenkins console:
 ```
