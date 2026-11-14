@@ -14,8 +14,8 @@ while [ $SECONDS -lt $end ]; do
   code=${out##* }
   if [ "$code" = "200" ]; then
     ok=$((ok + 1))
-    line="$(echo "${out% *}" | jq -r '"\(.version)  \(.host)"')"
-    [ "$line" != "$last" ] && echo "$(date +%T)  OK    $line" && last=$line
+    line="$(echo "${out% *}" | jq -r .version)"
+    [ "$line" != "$last" ] && echo "$(date +%T)  OK    now serving $line" && last=$line
   else
     fail=$((fail + 1)); echo "$(date +%T)  FAIL  HTTP $code"
   fi
