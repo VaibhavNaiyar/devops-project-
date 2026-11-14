@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CampusDesk</title>
+<style>
+  :root { --brand: #2563eb; --bg: #f4f6fb; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--brand); color: #fff; padding: 20px 16px; }
+  header .wrap, main { max-width: 900px; margin: 0 auto; }
+  header h1 { margin: 0; font-size: 26px; }
+  header p { margin: 4px 0 0; opacity: .9; font-size: 14px; }
+  .badge { display: inline-block; background: rgba(255,255,255,.2); border-radius: 999px; padding: 2px 10px; margin-right: 6px; font-size: 13px; }
+  main { padding: 20px 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  form { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; }
+  input, select, button { font: inherit; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  button { background: var(--brand); color: #fff; border: 0; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  .st { border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+  .Open { background: #fef3c7; } .In.progress, .In { background: #dbeafe; } .Resolved { background: #dcfce7; }
+  #msg { color: #b91c1c; font-size: 14px; min-height: 18px; margin-top: 6px; }
+  @media (max-width: 640px) { form { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>CampusDesk</h1>
+  <p>Raise and track campus requests: hostel, lab, IT, library.</p>
+  <p><span class="badge" id="ver">version …</span><span class="badge" id="host">server …</span></p>
+</div></header>
+<main>
+  <div class="card">
+    <form id="f">
+      <input name="title" placeholder="What's the issue? e.g. Wi-Fi down in Block C" required minlength="3" maxlength="120">
+      <select name="category" id="cat"></select>
+      <input name="location" placeholder="Room / block" maxlength="60">
+      <button>Raise request</button>
+    </form>
+    <div id="msg"></div>
+  </div>
+  <div class="card">
+    <table><thead><tr><th>Request</th><th>Category</th><th>Location</th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+  </div>
+</main>
+<script>
+let STATUSES = [];
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+async function load() {
+  const info = await (await fetch('/api/info')).json();
+  STATUSES = info.statuses;
+  document.documentElement.style.setProperty('--brand', info.color);
+  $('#ver').textContent = 'version ' + info.version; $('#host').textContent = 'server ' + info.host;
+  $('#cat').innerHTML = info.categories.map((c) => `<option>${esc(c)}</option>`).join('');
+  render(await (await fetch('/api/requests')).json());
+}
+function render(items) {
+  $('#rows').innerHTML = items.length ? items.map((r) => `<tr><td>${esc(r.title)}</td><td>${esc(r.category)}</td><td>${esc(r.location || '-')}</td>
+    <td><span class="st ${esc(r.status)}">${esc(r.status)}</span></td>
+    <td><select data-id="${esc(r.id)}">${STATUSES.map((s) => `<option${s === r.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></td></tr>`).join('')
+    : '<tr><td colspan="5" style="color:var(--muted)">No requests yet.</td></tr>';
+}
+$('#f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = Object.fromEntries(new FormData(e.target));
+  const r = await fetch('/api/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { $('#msg').textContent = (await r.json()).errors.join('; '); return; }
+  $('#msg').textContent = ''; e.target.reset(); load();
+});
+$('#rows').addEventListener('change', async (e) => {
+  if (!e.target.dataset.id) return;
+  await fetch('/api/requests/' + e.target.dataset.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: e.target.value }) });
+  load();
+});
+load();
+</script>
+</body>
+</html>
