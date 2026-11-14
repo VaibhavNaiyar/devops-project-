@@ -87,13 +87,16 @@ an **unhealthy app server**, **more than 10 HTTP 5xx in 5 minutes**, and **CPU >
 app/          Node.js 20 + Express app, tests, Dockerfile
 terraform/    VPC, security groups, IAM, EC2, ALB, ECR, DynamoDB, SSM, CloudWatch, SNS, Budget
 ansible/      dynamic AWS inventory, site.yml (server setup), deploy.yml (rolling deploy), roles/
-scripts/      smoke-test.sh, watch-downtime.sh
+scripts/      up.sh / down.sh (one-command start/stop), smoke-test.sh, watch-downtime.sh, jenkins-build.sh
 Jenkinsfile   the CI/CD pipeline
 ```
 
 ## How to run it
 
 Prerequisites: an AWS account, AWS CLI configured, Terraform ≥ 1.6, Ansible with the `amazon.aws` collection and boto3.
+
+**Quick path:** `scripts/up.sh --deploy` builds everything and runs the first pipeline (about 12 minutes);
+`scripts/down.sh` destroys it all and confirms nothing is left running. The steps below are what those scripts do.
 
 ```bash
 # 1. Infrastructure (about 4 minutes)
