@@ -118,5 +118,46 @@ scripts/watch-downtime.sh "$(cd terraform && terraform output -raw app_url)" 300
 cd terraform && terraform destroy
 ```
 
-## Results
-_Filled in with the actual demo results._
+## Results (14 Nov 2026, us-east-1)
+
+| Build | Release | Outcome |
+|---|---|---|
+| #1 | `1.0.0-b1-aa4c7ae` | ✅ All stages green: first release deployed to both servers |
+| #2 | `1.1.0-b2-e6fe30c` (new green theme) | ✅ Rolling deploy with **0 failed requests** while users were served |
+| #3 | `1.1.0-b3-9d59122` with `SIMULATE_BAD_RELEASE` | ❌ by design: health check failed on app-1, **automatic rollback**, **173 requests, 0 failed** |
+
+**Automatic rollback (build #3)**, from the Jenkins console:
+```
+msg: 1.1.0-b3-9d59122 failed its health check on campusdesk-app-1; server restored to 1.1.0-b2-e6fe30c, rollout stopped.
+campusdesk-app-1 : ok=13 changed=7 unreachable=0 failed=1 skipped=0 rescued=1     <- app-2 was never touched
+ROLLBACK: restoring 1.1.0-b2-e6fe30c on every server
+SMOKE TEST PASSED
+ROLLBACK COMPLETE: 1.1.0-b2-e6fe30c is live again
+```
+and from `scripts/watch-downtime.sh`, hitting the site twice a second during the whole failed release:
+```
+==== FINAL ====
+19:59:26  requests: 173  ok: 173  FAILED: 0  | versions served: 1.1.0-b2-e6fe30c x173
+RESULT: ZERO DOWNTIME (0 failed requests)
+```
+
+**Idempotent configuration:** a second `ansible-playbook ansible/site.yml` run reports `changed=0 failed=0` on all three servers.
+
+### Screenshots
+
+**The app, version 1.1.0, served through the ALB by `campusdesk-app-2`, with data in DynamoDB**
+![CampusDesk live](docs/screenshots/01-app-live-v1.1.0.png)
+
+**Jenkins Stage View: builds #1 and #2 green; #3 stopped at the rolling deploy and rolled back**
+![Jenkins pipeline](docs/screenshots/02-jenkins-pipeline-stages.png)
+
+**Load balancer target group: 2 healthy app servers**
+![ALB targets](docs/screenshots/03-alb-targets-healthy.png)
+
+**CloudWatch dashboard: healthy hosts dip from 2 to 1 during each rolling deploy while requests continue**
+![CloudWatch dashboard](docs/screenshots/04-cloudwatch-dashboard.png)
+
+## Known limitations / next steps
+- The ALB serves plain HTTP; production would add a domain, an ACM certificate and an HTTPS listener.
+- Terraform state is local; a team would use an S3 backend with locking.
+- Instances sit in public subnets (no NAT gateway, to stay within free tier); production would use private subnets.
