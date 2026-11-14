@@ -3,6 +3,7 @@ node_modules/
 *.tfstate
 *.tfstate.*
 *.tfplan
+tfplan
 terraform.tfvars
 *.pem
 .env
