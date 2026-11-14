@@ -44,6 +44,14 @@ test('rejects invalid input', async () => {
   server.close();
 });
 
+test('fault injection makes health return 503', async () => {
+  const server = buildApp({ store: memoryStore(), version: 'bad', failHealth: true }).listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const r = await fetch(`http://127.0.0.1:${server.address().port}/health`);
+  assert.strictEqual(r.status, 503);
+  server.close();
+});
+
 test('sets security headers and hides x-powered-by', async () => {
   const { server, call } = await start();
   const r = await call('/health');

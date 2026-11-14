@@ -1,0 +1,79 @@
+# Zero-downtime rolling deploy, run by Jenkins:
+#   ansible-playbook ansible/deploy.yml -e image_tag=1.1.0-b7-abc123 -e previous_tag=1.0.0-b6-def456
+#
+# One server at a time (serial: 1):
+#   1. take it out of the load balancer and let in-flight requests drain
+#   2. start the new container and check /health on the server itself
+#   3. healthy   -> put it back in the load balancer, wait until the ALB says "healthy", go to the next server
+#      unhealthy -> start the previous version again, put it back, and STOP the rollout (the other server was never touched)
+- name: Rolling deploy of CampusDesk
+  hosts: app
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    ecr_repo: "{{ lookup('amazon.aws.aws_ssm', '/' ~ project ~ '/ecr_repo_url', region=aws_region) }}"
+    target_group_arn: "{{ lookup('amazon.aws.aws_ssm', '/' ~ project ~ '/target_group_arn', region=aws_region) }}"
+    previous_tag: none
+    fail_health: "0"
+    target: "Id={{ instance_id }},Port={{ app_port }}"
+
+  tasks:
+    - name: Check inputs
+      ansible.builtin.assert:
+        that: image_tag is defined and image_tag | length > 0
+        fail_msg: "pass -e image_tag=<tag>"
+
+    - name: Pull {{ image_tag }} (before draining, so the server is out of the ALB for as little time as possible)
+      ansible.builtin.command: docker pull {{ ecr_repo }}:{{ image_tag }}
+      changed_when: true
+
+    - name: Drain - remove this server from the load balancer
+      ansible.builtin.command: aws elbv2 deregister-targets --region {{ aws_region }} --target-group-arn {{ target_group_arn }} --targets {{ target }}
+      delegate_to: localhost
+      become: false
+      changed_when: true
+
+    - name: Wait until the ALB has finished draining it
+      ansible.builtin.command: aws elbv2 wait target-deregistered --region {{ aws_region }} --target-group-arn {{ target_group_arn }} --targets {{ target }}
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    - name: Release and verify
+      block:
+        - name: Start new version
+          ansible.builtin.include_tasks: tasks/run-container.yml
+          vars:
+            tag: "{{ image_tag }}"
+            inject_fault: "{{ fail_health }}"
+
+      rescue:
+        - name: New version is unhealthy - roll THIS server back to {{ previous_tag }}
+          ansible.builtin.include_tasks: tasks/run-container.yml
+          vars:
+            tag: "{{ previous_tag }}"
+            inject_fault: "0"
+          when: previous_tag != 'none'
+
+        - name: Put the server back into the load balancer
+          ansible.builtin.command: aws elbv2 register-targets --region {{ aws_region }} --target-group-arn {{ target_group_arn }} --targets {{ target }}
+          delegate_to: localhost
+          become: false
+          when: previous_tag != 'none'
+
+        - name: Stop the rollout
+          ansible.builtin.fail:
+            msg: "{{ image_tag }} failed its health check on {{ inventory_hostname }}; server restored to {{ previous_tag }}, rollout stopped."
+
+    - name: Put the server back into the load balancer
+      ansible.builtin.command: aws elbv2 register-targets --region {{ aws_region }} --target-group-arn {{ target_group_arn }} --targets {{ target }}
+      delegate_to: localhost
+      become: false
+      changed_when: true
+
+    - name: Wait until the ALB reports it healthy before touching the next server
+      ansible.builtin.command: aws elbv2 wait target-in-service --region {{ aws_region }} --target-group-arn {{ target_group_arn }} --targets {{ target }}
+      delegate_to: localhost
+      become: false
+      changed_when: false

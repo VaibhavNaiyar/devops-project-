@@ -6,7 +6,16 @@ const { createStore, newId } = require('./store');
 const CATEGORIES = ['Hostel', 'Lab', 'IT', 'Library', 'Other'];
 const STATUSES = ['Open', 'In progress', 'Resolved'];
 
-function buildApp({ store = createStore(), version = process.env.APP_VERSION || 'dev', color = process.env.APP_COLOR || '#2563eb' } = {}) {
+// Release colour: change it together with the version in package.json to see a release go live in the browser
+const RELEASE_COLOR = '#2563eb';
+
+function buildApp({
+  store = createStore(),
+  version = process.env.APP_VERSION || 'dev',
+  color = process.env.APP_COLOR || RELEASE_COLOR,
+  // Fault injection for the rollback demo: the container starts but reports itself unhealthy
+  failHealth = process.env.FAIL_HEALTH === '1',
+} = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '10kb' }));
@@ -16,7 +25,8 @@ function buildApp({ store = createStore(), version = process.env.APP_VERSION || 
   });
 
   // Health check used by the ALB, the Jenkins smoke test and the zero-downtime watcher
-  app.get('/health', (req, res) => res.json({ status: 'UP', version, host: os.hostname(), store: store.kind }));
+  app.get('/health', (req, res) => res.status(failHealth ? 503 : 200)
+    .json({ status: failHealth ? 'DOWN' : 'UP', version, host: os.hostname(), store: store.kind }));
   app.get('/api/info', (req, res) => res.json({ version, color, host: os.hostname(), categories: CATEGORIES, statuses: STATUSES }));
 
   app.get('/api/requests', async (req, res, next) => {

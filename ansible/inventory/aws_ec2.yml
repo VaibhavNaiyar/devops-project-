@@ -1,0 +1,17 @@
+# Dynamic inventory: servers are found by their AWS tags, so nothing is hard-coded.
+#   groups: "app" (tag Role=app) and "jenkins" (tag Role=jenkins)
+plugin: amazon.aws.aws_ec2
+regions:
+  - us-east-1
+filters:
+  tag:Project: campusdesk
+  instance-state-name: running
+hostnames:
+  - tag:Name
+keyed_groups:
+  - key: tags.Role
+    prefix: ""
+    separator: ""
+compose:
+  public_ip: public_ip_address
+  private_ip: private_ip_address

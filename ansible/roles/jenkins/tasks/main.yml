@@ -1,0 +1,143 @@
+- name: Build tools for the pipeline (Java for Jenkins, Ansible + boto3 for deploys)
+  ansible.builtin.apt:
+    name: [fontconfig, openjdk-21-jre-headless, git, ansible, python3-boto3, python3-botocore]
+    state: present
+
+- name: Install AWS CLI v2
+  ansible.builtin.shell: |
+    set -e
+    cd /tmp && curl -sSLo awscliv2.zip https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+    unzip -qo awscliv2.zip && ./aws/install --update && rm -rf aws awscliv2.zip
+  args:
+    creates: /usr/local/bin/aws
+
+- name: Add the Trivy and Jenkins apt repositories
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "/etc/apt/keyrings/{{ item.name }}.asc"
+    mode: "0644"
+  loop:
+    - { name: trivy, url: "https://aquasecurity.github.io/trivy-repo/deb/public.key" }
+    - { name: jenkins, url: "https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key" }
+
+- name: Apt sources
+  ansible.builtin.copy:
+    dest: "/etc/apt/sources.list.d/{{ item.name }}.list"
+    content: "{{ item.line }}\n"
+    mode: "0644"
+  loop:
+    - { name: trivy, line: "deb [signed-by=/etc/apt/keyrings/trivy.asc] https://aquasecurity.github.io/trivy-repo/deb generic main" }
+    - { name: jenkins, line: "deb [signed-by=/etc/apt/keyrings/jenkins.asc] https://pkg.jenkins.io/debian-stable binary/" }
+
+- name: Install Jenkins LTS and Trivy
+  ansible.builtin.apt:
+    name: [jenkins, trivy]
+    update_cache: true
+
+- name: Jenkins may use Docker
+  ansible.builtin.user:
+    name: jenkins
+    groups: docker
+    append: true
+  notify: Restart jenkins
+
+# ---------- Jenkins configured as code: no setup wizard, no clicking ----------
+- name: Admin password (generated once, stored only on the admin machine)
+  ansible.builtin.set_fact:
+    jenkins_admin_password: "{{ lookup('ansible.builtin.password', '~/.campusdesk/jenkins-admin-password', length=20, chars=['ascii_letters', 'digits']) }}"
+  no_log: true
+
+- name: Directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/systemd/system/jenkins.service.d, owner: root, mode: "0755" }
+    - { path: /etc/jenkins, owner: root, mode: "0755" }
+    - { path: /var/lib/jenkins/.ssh, owner: jenkins, mode: "0700" }
+    - { path: /var/lib/jenkins/.docker, owner: jenkins, mode: "0700" }
+
+- name: Secret environment for Jenkins (readable by root only; systemd injects it)
+  ansible.builtin.copy:
+    dest: /etc/jenkins/casc.env
+    content: "JENKINS_ADMIN_PASSWORD={{ jenkins_admin_password }}\n"
+    mode: "0600"
+  no_log: true
+  notify: Restart jenkins
+
+- name: systemd override (skip wizard, load configuration-as-code)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/jenkins.service.d/override.conf
+    content: |
+      [Service]
+      Environment="JAVA_OPTS=-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
+      Environment="CASC_JENKINS_CONFIG=/var/lib/jenkins/casc.yaml"
+      EnvironmentFile=/etc/jenkins/casc.env
+    mode: "0644"
+  notify: Restart jenkins
+
+- name: Jenkins configuration as code (admin user, security, pipeline job)
+  ansible.builtin.template:
+    src: casc.yaml.j2
+    dest: /var/lib/jenkins/casc.yaml
+    owner: jenkins
+    mode: "0640"
+  notify: Restart jenkins
+
+- name: Plugin list
+  ansible.builtin.copy:
+    src: plugins.txt
+    dest: /var/lib/jenkins/plugins.txt
+    owner: jenkins
+    mode: "0644"
+  register: plugin_list
+
+- name: Download the Jenkins plugin manager
+  ansible.builtin.get_url:
+    url: https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar
+    dest: /opt/jenkins-plugin-manager.jar
+    mode: "0644"
+
+- name: Install plugins
+  ansible.builtin.command: >
+    java -jar /opt/jenkins-plugin-manager.jar --war /usr/share/java/jenkins.war
+    --plugin-download-directory /var/lib/jenkins/plugins --plugin-file /var/lib/jenkins/plugins.txt
+  become_user: jenkins
+  when: plugin_list.changed
+  changed_when: true
+  notify: Restart jenkins
+
+- name: SSH key Jenkins uses to deploy to the app servers
+  ansible.builtin.copy:
+    src: ~/.ssh/campusdesk.pem
+    dest: /var/lib/jenkins/.ssh/campusdesk.pem
+    owner: jenkins
+    mode: "0600"
+
+- name: Jenkins pushes to ECR through the instance role
+  ansible.builtin.copy:
+    dest: /var/lib/jenkins/.docker/config.json
+    content: '{ "credsStore": "ecr-login" }'
+    owner: jenkins
+    mode: "0600"
+
+- name: Apply configuration now
+  ansible.builtin.meta: flush_handlers
+
+- name: Jenkins is up
+  ansible.builtin.service:
+    name: jenkins
+    state: started
+    enabled: true
+
+- name: Wait for the Jenkins login page
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/login
+    status_code: 200
+  register: login
+  until: login.status == 200
+  retries: 40
+  delay: 5

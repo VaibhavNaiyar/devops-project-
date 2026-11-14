@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars (git-ignored) and adjust
+alert_email        = "you@example.com"
+monthly_budget_usd = 5
+enable_budget      = true

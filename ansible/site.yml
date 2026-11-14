@@ -1,0 +1,27 @@
+# Configures every server created by Terraform.
+#   ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook ansible/site.yml
+- name: Base configuration for all servers
+  hosts: all
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Wait until the new instance accepts SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+    - name: Gather facts
+      ansible.builtin.setup:
+  roles:
+    - common
+    - docker
+
+- name: App servers
+  hosts: app
+  become: true
+  roles:
+    - app_host
+
+- name: Jenkins CI/CD server
+  hosts: jenkins
+  become: true
+  roles:
+    - jenkins

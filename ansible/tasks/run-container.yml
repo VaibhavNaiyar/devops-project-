@@ -1,0 +1,24 @@
+# Replace the running container with {{ tag }} and wait for its /health to answer 200.
+- name: Stop the current container ({{ inventory_hostname }})
+  ansible.builtin.command: docker rm -f {{ project }}
+  register: rm
+  changed_when: rm.rc == 0
+  failed_when: false
+
+- name: Run {{ tag }} (non-root, read-only filesystem, no Linux capabilities, memory-limited)
+  ansible.builtin.command: >
+    docker run -d --name {{ project }} --restart unless-stopped
+    -p {{ app_port }}:8080 --env-file /etc/campusdesk.env
+    -e APP_VERSION={{ tag }} -e FAIL_HEALTH={{ inject_fault }}
+    --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --memory 384m
+    {{ ecr_repo }}:{{ tag }}
+  changed_when: true
+
+- name: Health check {{ tag }} on the server itself
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ app_port }}/health"
+    status_code: 200
+  register: health
+  until: health.status == 200
+  retries: 10
+  delay: 3

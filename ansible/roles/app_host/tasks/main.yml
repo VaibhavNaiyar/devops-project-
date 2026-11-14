@@ -1,0 +1,10 @@
+# The app container itself is started by deploy.yml (from Jenkins); this only prepares the host.
+- name: "App runtime configuration (no secrets - AWS access comes from the instance role)"
+  ansible.builtin.copy:
+    dest: /etc/campusdesk.env
+    content: |
+      NODE_ENV=production
+      PORT={{ app_port }}
+      AWS_REGION={{ aws_region }}
+      TABLE_NAME={{ table_name }}
+    mode: "0640"

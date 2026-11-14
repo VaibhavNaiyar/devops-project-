@@ -1,0 +1,45 @@
+# Managed by Ansible (roles/jenkins) - Jenkins Configuration as Code
+jenkins:
+  systemMessage: "CampusDesk CI/CD - every push to main is tested, scanned, built and rolled out to AWS"
+  numExecutors: 2
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          name: Administrator
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  crumbIssuer: "standard"
+
+unclassified:
+  location:
+    url: "http://{{ ansible_host }}:8080/"
+
+jobs:
+  - script: |
+      pipelineJob('campusdesk') {
+        description('CampusDesk: unit tests, IaC checks, Docker build, Trivy scan, push to ECR, Ansible rolling deploy behind the ALB')
+        properties {
+          pipelineTriggers {
+            triggers {
+              githubPush()
+            }
+          }
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url('{{ github_repo_url }}') }
+                branch('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }

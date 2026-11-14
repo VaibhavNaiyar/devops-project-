@@ -1,0 +1,9 @@
+project: campusdesk
+aws_region: us-east-1
+timezone: Asia/Kolkata
+app_port: 8080
+table_name: "{{ project }}-requests"
+github_repo_url: https://github.com/VaibhavNaiyar/devops-project-.git
+
+# Jenkins (inside the VPC) connects over private IPs; the admin laptop over public IPs
+ansible_host: "{{ private_ip if lookup('env', 'ANSIBLE_USE_PRIVATE_IP') == '1' else public_ip }}"

@@ -1,0 +1,29 @@
+- name: Install Docker and the ECR credential helper
+  ansible.builtin.apt:
+    name: [docker.io, docker-buildx, amazon-ecr-credential-helper]
+    state: present
+
+- name: Docker daemon settings (log rotation)
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: "{{ {'log-driver': 'json-file', 'log-opts': {'max-size': '10m', 'max-file': '3'}, 'live-restore': true} | to_nice_json }}"
+    mode: "0644"
+  notify: Restart docker
+
+- name: Docker client config directory
+  ansible.builtin.file:
+    path: /root/.docker
+    state: directory
+    mode: "0700"
+
+- name: Root's Docker uses the instance role to log in to ECR (no stored passwords)
+  ansible.builtin.copy:
+    dest: /root/.docker/config.json
+    content: '{ "credsStore": "ecr-login" }'
+    mode: "0600"
+
+- name: Docker is running
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
