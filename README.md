@@ -145,6 +145,15 @@ and from `scripts/watch-downtime.sh`, hitting the site twice a second during the
 RESULT: ZERO DOWNTIME (0 failed requests)
 ```
 
+**Alarm e-mail (15 Nov 2026):** stopping the app container on `campusdesk-app-1` made the ALB mark it unhealthy;
+`campusdesk-unhealthy-app-server` went OK → ALARM after about 4 minutes and SNS e-mailed the alert, while the site kept answering
+HTTP 200 from `campusdesk-app-2`. After the container was started again the alarm returned to OK (a second e-mail).
+```
+18:24:12  docker stop campusdesk   (campusdesk-app-1)
+18:28:38  alarm=ALARM  site=/health HTTP 200      targets: app-1 unhealthy, app-2 healthy
+18:32:49  alarm=OK     (container started again)
+```
+
 **Idempotent configuration:** a second `ansible-playbook ansible/site.yml` run reports `changed=0 failed=0` on all three servers.
 
 ### Screenshots
